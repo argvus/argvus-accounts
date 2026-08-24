@@ -50,7 +50,7 @@ pub fn list_groups() -> Result<Vec<GroupInfo>> {
         }
         libc::endgrent();
     }
-    groups.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    groups.sort_by_key(|info| info.name.to_lowercase());
     Ok(groups)
 }
 
@@ -73,7 +73,7 @@ pub fn groups_of_user(username: &str, primary_gid: u32) -> Result<Vec<GroupInfo>
             Err(err) => return Err(Error::system(format!("NSS group lookup failed: {err}"))),
         }
     }
-    groups.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    groups.sort_by_key(|info| info.name.to_lowercase());
     Ok(groups)
 }
 

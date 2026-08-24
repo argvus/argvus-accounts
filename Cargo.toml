@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/argvus-accounts-core",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "GPL-3.0-only"
+authors = ["William C. Canin <william.costa.canin@gmail.com>"]
+repository = "https://github.com/argvus/argvus-accounts"
+
+[workspace.dependencies]
+libc = "0.2"
+nix = { version = "0.29", features = ["user"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+tempfile = "3"
+thiserror = "2"
+clap = { version = "4", features = ["derive", "wrap_help"] }
+argvus-accounts-core = { path = "crates/argvus-accounts-core", version = "0.1.0" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

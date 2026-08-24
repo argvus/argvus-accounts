@@ -6,3 +6,4 @@ pub mod passwd;
 pub mod metadata;
 pub mod permissions;
 pub mod avatar;
+pub mod groups;

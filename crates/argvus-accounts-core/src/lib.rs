@@ -2,3 +2,5 @@
 
 pub mod error;
 pub mod validation;
+pub mod passwd;
+pub mod metadata;

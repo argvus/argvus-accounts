@@ -13,7 +13,7 @@
 
 use std::fs;
 use std::io::{Cursor, Write};
-use std::os::unix::fs::{chown, MetadataExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, PermissionsExt, chown};
 use std::path::Path;
 
 use image::ImageFormat;

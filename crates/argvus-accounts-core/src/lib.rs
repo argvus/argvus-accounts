@@ -36,7 +36,7 @@ pub mod permissions;
 pub mod validation;
 
 pub use account::{AccountManager, PrivilegeOps, ShadowOps, UserView};
-pub use avatar::{avatar_path, find_avatar, AVATAR_FILENAME};
+pub use avatar::{AVATAR_FILENAME, avatar_path, find_avatar};
 pub use error::{Error, Result, SystemSource};
 pub use passwd::UserInfo;
 pub use permissions::{

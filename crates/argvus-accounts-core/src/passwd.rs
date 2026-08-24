@@ -105,19 +105,23 @@ unsafe fn user_from_ptr(pw: *const libc::passwd) -> Option<UserInfo> {
     if pw.is_null() {
         return None;
     }
-    let pw = &*pw;
-    Some(UserInfo {
-        username: CStr::from_ptr(pw.pw_name).to_string_lossy().into_owned(),
-        uid: pw.pw_uid,
-        gid: pw.pw_gid,
-        gecos: if pw.pw_gecos.is_null() {
-            String::new()
-        } else {
-            CStr::from_ptr(pw.pw_gecos).to_string_lossy().into_owned()
-        },
-        home: PathBuf::from(OsStr::from_bytes(CStr::from_ptr(pw.pw_dir).to_bytes())),
-        shell: CStr::from_ptr(pw.pw_shell).to_string_lossy().into_owned(),
-    })
+    // SAFETY: the caller guarantees `pw` points to valid storage per
+    // getpwent/getpwnam semantics for the duration of this call.
+    unsafe {
+        let pw = &*pw;
+        Some(UserInfo {
+            username: CStr::from_ptr(pw.pw_name).to_string_lossy().into_owned(),
+            uid: pw.pw_uid,
+            gid: pw.pw_gid,
+            gecos: if pw.pw_gecos.is_null() {
+                String::new()
+            } else {
+                CStr::from_ptr(pw.pw_gecos).to_string_lossy().into_owned()
+            },
+            home: PathBuf::from(OsStr::from_bytes(CStr::from_ptr(pw.pw_dir).to_bytes())),
+            shell: CStr::from_ptr(pw.pw_shell).to_string_lossy().into_owned(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -143,9 +147,11 @@ mod tests {
     fn enumeration_includes_root() {
         let users = list_users().expect("enumeration works");
         assert!(users.iter().any(|u| u.username == "root"));
-        assert!(users
-            .windows(2)
-            .all(|pair| pair[0].username <= pair[1].username));
+        assert!(
+            users
+                .windows(2)
+                .all(|pair| pair[0].username <= pair[1].username)
+        );
     }
 
     #[test]

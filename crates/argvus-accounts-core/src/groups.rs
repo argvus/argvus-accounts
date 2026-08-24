@@ -145,20 +145,24 @@ unsafe fn group_from_ptr(gr: *const libc::group) -> Option<GroupInfo> {
     if gr.is_null() {
         return None;
     }
-    let gr = &*gr;
-    let mut members = Vec::new();
-    if !gr.gr_mem.is_null() {
-        let mut cursor = gr.gr_mem;
-        while !(*cursor).is_null() {
-            members.push(CStr::from_ptr(*cursor).to_string_lossy().into_owned());
-            cursor = cursor.add(1);
+    // SAFETY: the caller guarantees `gr` points to valid storage per
+    // getgrent/getgrnam semantics for the duration of this call.
+    unsafe {
+        let gr = &*gr;
+        let mut members = Vec::new();
+        if !gr.gr_mem.is_null() {
+            let mut cursor = gr.gr_mem;
+            while !(*cursor).is_null() {
+                members.push(CStr::from_ptr(*cursor).to_string_lossy().into_owned());
+                cursor = cursor.add(1);
+            }
         }
+        Some(GroupInfo {
+            name: CStr::from_ptr(gr.gr_name).to_string_lossy().into_owned(),
+            gid: gr.gr_gid,
+            members,
+        })
     }
-    Some(GroupInfo {
-        name: CStr::from_ptr(gr.gr_name).to_string_lossy().into_owned(),
-        gid: gr.gr_gid,
-        members,
-    })
 }
 
 #[cfg(test)]

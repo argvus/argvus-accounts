@@ -156,10 +156,10 @@ fn expand_tilde(path: &Path) -> PathBuf {
     if text == "~" {
         return home_dir().unwrap_or_else(|| path.to_path_buf());
     }
-    if let Some(rest) = text.strip_prefix("~/") {
-        if let Some(home) = home_dir() {
-            return home.join(rest);
-        }
+    if let Some(rest) = text.strip_prefix("~/")
+        && let Some(home) = home_dir()
+    {
+        return home.join(rest);
     }
     path.to_path_buf()
 }

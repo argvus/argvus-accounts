@@ -136,18 +136,22 @@ mod tests {
     fn unix_provider_allows_reads_for_everyone() {
         let me = actor("ghost", false);
         let provider = UnixAuthorizationProvider;
-        assert!(provider
-            .authorize(Action::ReadAccount, &ctx(&me, "william"))
-            .is_ok());
+        assert!(
+            provider
+                .authorize(Action::ReadAccount, &ctx(&me, "william"))
+                .is_ok()
+        );
     }
 
     #[test]
     fn unix_provider_allows_own_profile_changes_only() {
         let me = actor("ghost", false);
         let provider = UnixAuthorizationProvider;
-        assert!(provider
-            .authorize(Action::ModifyOwnAccount, &ctx(&me, "ghost"))
-            .is_ok());
+        assert!(
+            provider
+                .authorize(Action::ModifyOwnAccount, &ctx(&me, "ghost"))
+                .is_ok()
+        );
 
         let err = provider
             .authorize(Action::ModifyOwnAccount, &ctx(&me, "william"))
@@ -188,8 +192,10 @@ mod tests {
     #[test]
     fn allow_all_provider_grants_everything() {
         let me = actor("ghost", false);
-        assert!(AllowAllProvider
-            .authorize(Action::AdministerGroups, &ctx(&me, "root"))
-            .is_ok());
+        assert!(
+            AllowAllProvider
+                .authorize(Action::AdministerGroups, &ctx(&me, "root"))
+                .is_ok()
+        );
     }
 }

@@ -5,3 +5,4 @@ pub mod validation;
 pub mod passwd;
 pub mod metadata;
 pub mod permissions;
+pub mod avatar;

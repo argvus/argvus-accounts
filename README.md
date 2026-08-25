@@ -33,10 +33,14 @@ privileges.
   to a square 256x256 PNG and deployed atomically to `~/.face`.
 - Query group membership (`groups`) and mutate it administratively
   (`groups --add/--remove`) via `gpasswd`.
+- Change passwords (`passwd`): self-service with current-password proof via
+  the system's setuid `unix_chkpwd` helper, or administrator reset.
+- Automatic privilege elevation through polkit (`pkexec`) — administrative
+  operations work without `sudo`; a polkit agent handles authorization.
 - Reusable library crate (`argvus-accounts-core`) ready for a future Argvus
   GUI (`argvus-accounts-gtk` / `argvus-settings`).
-- Authorization layer (`AuthorizationProvider`) designed for a future polkit
-  integration; today it implements classic Unix semantics (root = admin).
+- Authorization layer (`AuthorizationProvider`) implementing classic Unix
+  semantics (root = admin) with pluggable providers.
 
 ## Architecture
 
@@ -125,15 +129,44 @@ Avatar removed successfully.
 $ argvus-accounts self name "William Canin"
 Display name updated successfully.
 
-$ sudo argvus-accounts name ghost "Ghost"
+$ argvus-accounts name ghost "Ghost"
+argvus-accounts: requesting administrator privileges via polkit…
 Display name updated successfully.
 
-$ sudo argvus-accounts groups ghost --add wheel
+$ argvus-accounts groups ghost --add wheel
+argvus-accounts: requesting administrator privileges via polkit…
 Added 'ghost' to group 'wheel'.
 
-$ sudo argvus-accounts groups ghost --remove wheel
-Removed 'ghost' from group 'wheel'.
+$ argvus-accounts passwd william current-pass new-secret-1 new-secret-1
+Password updated successfully for 'william'.
 ```
+
+No `sudo` prefix is required: whenever an operation needs administrator
+privileges, the CLI re-executes itself through polkit (`pkexec`) and your
+desktop agent asks for authorization. Prefer a terminal prompt? Keep using
+`sudo` — both work.
+
+### Changing passwords
+
+```sh
+# Your own password: the current one is required as proof.
+argvus-accounts passwd $USER <OLD_PASSWD> <NEW_PASSWD> <CONFIRM_PASSWD>
+
+# Administrator reset of another user (current password not needed).
+sudo argvus-accounts passwd ghost ignored new-secret-1 new-secret-1
+```
+
+Rules and guarantees:
+
+- confirmation must match exactly, minimum length is 8, control characters
+  are rejected — all checked locally, before any elevation or prompt;
+- self-service changes verify the current password through the system's
+  setuid helper (`unix_chkpwd`, the same mechanism `pam_unix` uses) *before*
+  requesting elevation, so a typo never triggers an administrator dialog;
+- secrets travel exclusively through stdin pipes to `unix_chkpwd` /
+  `chpasswd` — never through argument vectors between tools;
+- administrators may reset other users' passwords; in that case the current
+  password argument is ignored.
 
 ### Command reference
 
@@ -141,11 +174,12 @@ Removed 'ghost' from group 'wheel'.
 |---|---|---|
 | `list [--all]` | List human users (all accounts with `--all`) | none |
 | `show USER` | Account details | none |
-| `name USER NAME` | Set display name of another user | root |
-| `avatar USER IMAGE` / `avatar USER --remove` | Manage another user's avatar | root |
+| `name USER NAME` | Set display name of another user | auto-elevates via polkit |
+| `avatar USER IMAGE` / `avatar USER --remove` | Manage another user's avatar | auto-elevates via polkit |
 | `groups USER` | List groups of a user | none |
-| `groups USER --add G [--add G2]` | Add memberships | root |
-| `groups USER --remove G [--remove G2]` | Remove memberships | root |
+| `groups USER --add G [--add G2]` | Add memberships | auto-elevates via polkit |
+| `groups USER --remove G [--remove G2]` | Remove memberships | auto-elevates via polkit |
+| `passwd USER OLD NEW CONFIRM` | Change password (own: proof required; others: admin reset) | self: none to verify; write auto-elevates via polkit |
 | `self` / `self show` | Show own account | none |
 | `self name NAME` | Change own display name | own password via PAM (chfn) |
 | `self avatar IMAGE` / `self avatar --remove` | Manage own avatar | none |
@@ -160,8 +194,10 @@ Use `--verbose` for diagnostics on any subcommand.
 | Read account info | yes | yes |
 | Change own display name | yes (via chfn/PAM) | yes |
 | Change own avatar | yes | yes |
-| Change another user's data | **no** | yes |
-| Group membership changes | **no** (even own) | yes |
+| Change own password | yes (current password proof required) | yes |
+| Change another user's data | **no** (auto-elevates via polkit) | yes |
+| Group membership changes | **no** (auto-elevates via polkit) | yes |
+| Reset another user's password | **no** (auto-elevates via polkit) | yes |
 
 Privileges are decided by the pluggable [`AuthorizationProvider`] layer. The
 default implementation follows Unix semantics (`euid == 0` is an
@@ -171,6 +207,16 @@ interface is ready for a `PolkitAuthorizationProvider` mapping:
 - `ModifyOwnAccount`   -> `com.argvus.accounts.change-own-data` (`allow_active=yes`)
 - `ModifyOtherAccount` -> `com.argvus.accounts.administer`     (`auth_admin`)
 - `AdministerGroups`   -> `com.argvus.accounts.administer`     (`auth_admin`)
+- `ChangePassword`     -> self-service with proof; admin reset otherwise
+
+### Automatic elevation (polkit)
+
+When an operation needs root and the process is not privileged, the CLI
+re-executes itself via `pkexec` with the same arguments. The elevated child is
+tagged with an internal environment guard, so authorization happens exactly
+once and a denial inside the child surfaces as a normal error instead of
+another prompt. pkexec missing (no polkit installed) produces an actionable
+error suggesting `sudo`.
 
 ## Avatar location and format contract
 
@@ -212,6 +258,14 @@ relax traversal for the greeter user or adopt a future AccountsService mirror.
   created inside the target home, fsynced, permissioned, chowned and renamed
   atomically (symlinks at `.face` are replaced, not followed).
 - A directory named `.face` is refused rather than removed recursively.
+- Password secrets never appear in argument vectors between tools: they are
+  streamed to `unix_chkpwd` / `chpasswd` through pipes. Note the inherent CLI
+  limitation that positional arguments (including passwords) are briefly
+  visible in your shell history and the system process table; prefer a
+  private terminal and consider rotating if that matters in your threat
+  model. Interactive prompt mode is planned.
+- Elevation uses polkit with a single-attempt guard; no password is ever
+  read or cached by `argvus-accounts` itself.
 - Errors are typed and actionable; internals are not leaked in messages.
 
 ## Integration with Argvus Greeter
@@ -263,7 +317,9 @@ no dotfiles touched, no services enabled during installation.
 
 ## Roadmap
 
-- polkit-backed authorization provider (no more required `sudo`);
+- dedicated polkit action files (`com.argvus.accounts.*`) with fine-grained
+  rules (today: generic pkexec elevation);
+- interactive password prompt mode (secrets never on argv);
 - optional AccountsService mirror for restricted-home setups;
 - `argvus-accounts-gtk` GUI on top of the core crate;
 - shell completions.

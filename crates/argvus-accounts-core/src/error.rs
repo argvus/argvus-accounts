@@ -82,6 +82,9 @@ pub enum Error {
     /// Misuse of the API or contradictory request parameters.
     #[error("invalid operation: {0}")]
     InvalidOperation(String),
+    /// A chosen password failed validation.
+    #[error("invalid password: {0}")]
+    InvalidPassword(String),
     /// A system-level operation (NSS, external tools) went wrong.
     #[error("{context}")]
     SystemOperationFailed {

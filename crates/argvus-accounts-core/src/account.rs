@@ -11,6 +11,7 @@ use crate::error::{Error, Result};
 use crate::groups::{self, GpasswdAction};
 use crate::metadata;
 use crate::passwd::{self, UserInfo};
+use crate::password;
 use crate::permissions::{
     Action, ActorIdentity, AuthContext, AuthorizationProvider, UnixAuthorizationProvider,
 };
@@ -26,6 +27,9 @@ pub trait PrivilegeOps: Send + Sync {
     fn add_to_group(&self, user: &str, group: &str) -> Result<()>;
     /// Removes `user` from `group`.
     fn remove_from_group(&self, user: &str, group: &str) -> Result<()>;
+    /// Sets `user`'s password (administrative backend; the secret is
+    /// transferred through stdin, never argv).
+    fn set_password(&self, user: &str, new: &str) -> Result<()>;
 }
 
 /// Default backend that shells out to shadow/util-linux tools
@@ -51,6 +55,10 @@ impl PrivilegeOps for ShadowOps {
     fn remove_from_group(&self, user: &str, group: &str) -> Result<()> {
         let mut cmd = groups::gpasswd_command(GpasswdAction::Remove, user, group);
         metadata::run_command(&mut cmd, "failed to remove group member")
+    }
+
+    fn set_password(&self, user: &str, new: &str) -> Result<()> {
+        password::set_password_admin(user, new)
     }
 }
 
@@ -252,6 +260,48 @@ impl AccountManager {
     /// Removes `username` from `group` (administrative operation).
     pub fn remove_group(&self, username: &str, group: &str) -> Result<()> {
         self.mutate_membership(username, group, MembershipChange::Remove)
+    }
+
+    /// Changes `username`'s password.
+    ///
+    /// Semantics:
+    ///
+    /// - **own account**: `proof` (the current password) is mandatory and is
+    ///   verified against the system before anything changes. This holds even
+    ///   when the caller is root, so the elevated re-execution performed by
+    ///   the CLI keeps the same guarantee;
+    /// - **another user's account**: administrative reset; `proof` is ignored
+    ///   and may be `None`. Authorization still applies.
+    ///
+    /// The final write goes through [`PrivilegeOps::set_password`] and
+    /// therefore requires effective root; the CLI elevates via polkit before
+    /// reaching this point.
+    pub fn change_password(&self, username: &str, proof: Option<&str>, new: &str) -> Result<()> {
+        password::validate_new_password(new)?;
+        let info = self.require_target(username)?;
+        let actor = self.actor()?;
+        let is_self = actor.username == info.username;
+        self.authorize(Action::ChangePassword, &info.username)?;
+
+        if is_self {
+            let Some(current) = proof else {
+                return Err(Error::InvalidOperation(
+                    "refusing to change your own password without the current password; \
+                     pass it as OLD_PASSWORD"
+                        .to_string(),
+                ));
+            };
+            if !password::verify_own_password(&info.username, current)? {
+                return Err(Error::PermissionDenied(
+                    "current password does not match".to_string(),
+                ));
+            }
+        }
+
+        // The final write requires effective root; when invoked directly by an
+        // unprivileged embedder, chpasswd itself fails with a system error.
+        // The CLI elevates via polkit before reaching this point.
+        self.ops.set_password(&info.username, new)
     }
 
     // -- internals ----------------------------------------------------------

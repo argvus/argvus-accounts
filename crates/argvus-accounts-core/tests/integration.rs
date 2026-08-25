@@ -57,6 +57,15 @@ impl PrivilegeOps for RecordingOps {
             .push(format!("remove:{user}:{group}"));
         Ok(())
     }
+
+    fn set_password(&self, user: &str, new: &str) -> Result<()> {
+        // Records the length only — never the secret itself.
+        self.calls
+            .lock()
+            .expect("mutex")
+            .push(format!("passwd:{user}:{}", new.len()));
+        Ok(())
+    }
 }
 
 fn fixture_png(width: u32, height: u32, color: [u8; 3]) -> PathBuf {
@@ -364,4 +373,68 @@ fn traversal_attempts_never_reach_nss_or_fs() {
         manager.get_user("definitely_missing_user_xyz"),
         Err(Error::UserNotFound(_))
     ));
+}
+
+#[test]
+fn changing_own_password_without_proof_is_refused() {
+    let me = me();
+    let manager = AccountManager::with_components(
+        Box::new(UnixAuthorizationProvider),
+        Box::<RecordingOps>::default(),
+    );
+    assert!(matches!(
+        manager.change_password(&me, None, "longenough1"),
+        Err(Error::InvalidOperation(_))
+    ));
+}
+
+#[test]
+fn wrong_current_password_blocks_the_change() {
+    if argvus_accounts_core::password::chkpwd_helper_path().is_none() {
+        return; // no shadow helper in this environment
+    }
+    let me = me();
+    let manager = AccountManager::with_components(
+        Box::new(UnixAuthorizationProvider),
+        Box::<RecordingOps>::default(),
+    );
+    assert!(matches!(
+        manager.change_password(&me, Some("surely-not-my-password"), "longenough1"),
+        Err(Error::PermissionDenied(_))
+    ));
+}
+
+#[test]
+fn unprivileged_caller_cannot_reset_someone_elses_password() {
+    if nix::unistd::Uid::effective().is_root() {
+        return; // root is an administrator by definition
+    }
+    let ops = RecordingOps::default();
+    let manager =
+        AccountManager::with_components(Box::new(UnixAuthorizationProvider), Box::new(ops));
+    assert!(matches!(
+        manager.change_password("root", None, "longenough1"),
+        Err(Error::PermissionDenied(_))
+    ));
+}
+
+#[test]
+fn administrator_reset_delegates_to_backend_with_validated_secret() {
+    let ops = RecordingOps::default();
+    let manager =
+        AccountManager::with_components(Box::new(AllowAllProvider), Box::new(ops.clone()));
+
+    // Too short: rejected before any backend call.
+    assert!(matches!(
+        manager.change_password("root", None, "short1!"),
+        Err(Error::InvalidPassword(_))
+    ));
+
+    manager
+        .change_password("root", None, "a-very-new-password")
+        .expect("allow-all provider authorizes the reset");
+    assert_eq!(
+        ops.snapshot(),
+        vec![format!("passwd:root:{}", "a-very-new-password".len())]
+    );
 }

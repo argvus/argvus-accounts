@@ -32,6 +32,7 @@ pub mod error;
 pub mod groups;
 pub mod metadata;
 pub mod passwd;
+pub mod password;
 pub mod permissions;
 pub mod validation;
 

@@ -98,6 +98,12 @@ pub fn current_user() -> Result<UserInfo> {
     get_user_by_uid(euid.as_raw())?.ok_or_else(|| Error::system("unable to resolve current user"))
 }
 
+/// Effective uid of the running process.
+#[must_use]
+pub fn effective_uid() -> u32 {
+    Uid::effective().as_raw()
+}
+
 /// # Safety
 /// `pw` must point to a valid `struct passwd` whose backing storage outlives
 /// this call (as guaranteed by `getpwent`/`getpwnam` semantics).

@@ -24,6 +24,11 @@ pub enum Action {
     ModifyOtherAccount,
     /// Change group membership of any account.
     AdministerGroups,
+    /// Change an account password.
+    ///
+    /// Self-service changes additionally require proof of the current
+    /// password (enforced by the manager, not by the provider).
+    ChangePassword,
 }
 
 /// Identity of the acting user.
@@ -89,6 +94,13 @@ impl AuthorizationProvider for UnixAuthorizationProvider {
             )),
             Action::AdministerGroups => Err(deny(
                 "group administration requires administrator privileges (re-run with sudo)",
+            )),
+            // Self-service password changes are allowed here; the manager
+            // additionally requires proof of the current password.
+            Action::ChangePassword if ctx.is_self() => Ok(()),
+            Action::ChangePassword => Err(deny(
+                "changing another user's password requires administrator privileges \
+                 (re-run with sudo)",
             )),
         }
     }

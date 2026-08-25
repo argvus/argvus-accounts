@@ -100,10 +100,12 @@ pub fn verify_own_password(username: &str, password: &str) -> Result<bool> {
         .map_err(|err| Error::system(format!("failed to launch {}: {err}", helper.display())))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        // The helper reads at most one line; a trailing newline is expected.
+        // Wire format (see pam_read_passwords in linux-pam): each password
+        // is NUL-terminated; the helper counts passwords by splitting on
+        // '\0' and reports "no password supplied" otherwise.
         stdin
             .write_all(password.as_bytes())
-            .and_then(|_| stdin.write_all(b"\n"))
+            .and_then(|_| stdin.write_all(b"\0"))
             .and_then(|_| stdin.flush())
             .ok();
         drop(stdin);

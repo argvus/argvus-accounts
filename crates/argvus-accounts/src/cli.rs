@@ -114,7 +114,7 @@ pub enum SelfAction {
         #[arg(long)]
         remove: bool,
     },
-    /// Change your own display name (may ask for your password via PAM).
+    /// Change your own display name (elevates automatically via polkit).
     Name {
         /// New display name.
         #[arg(value_name = "DISPLAY_NAME")]

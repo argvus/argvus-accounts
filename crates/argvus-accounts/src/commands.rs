@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use argvus_accounts_core::metadata;
 use argvus_accounts_core::passwd;
 use argvus_accounts_core::password;
 use argvus_accounts_core::{AccountManager, Error, Result};
@@ -25,9 +26,9 @@ pub fn execute(cli: &Cli) -> Result<()> {
         Command::List { all } => cmd_list(&manager, *all),
         Command::Show { user } => cmd_show(&manager, user),
         Command::Name { user, name } => {
-            elevate::ensure(&Requirement::OtherUsersOnly {
-                target: user.clone(),
-            })?;
+            // Validate before elevation so a typo never opens a polkit prompt.
+            metadata::validate_display_name(name)?;
+            elevate::ensure(&Requirement::Always)?;
             manager.set_display_name(user, name)?;
             println!("Display name updated successfully.");
             Ok(())
@@ -189,6 +190,10 @@ fn cmd_self(manager: &AccountManager, action: Option<&SelfAction>, verbose: bool
             Ok(())
         }
         Some(SelfAction::Name { name }) => {
+            // Same policy as `name USER`: validated first, then elevated —
+            // no interactive chfn/PAM prompt.
+            metadata::validate_display_name(name)?;
+            elevate::ensure(&Requirement::Always)?;
             manager.set_display_name(&me, name)?;
             println!("Display name updated successfully.");
             Ok(())

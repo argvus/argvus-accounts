@@ -15,11 +15,14 @@ use std::process::{Command, Stdio};
 
 use crate::error::{Error, Result};
 
-/// Minimum accepted length for a newly chosen password.
-pub const MIN_PASSWORD_LEN: usize = 8;
-
-/// Maximum length accepted from stdin by `unix_chkpwd`/`chpasswd` protocols.
-const MAX_PASSWORD_LEN: usize = 127;
+/// Maximum length accepted by the verification/write protocols.
+///
+/// `unix_chkpwd` allocates `PAM_MAX_RESP_SIZE` (512) bytes per password plus
+/// room for our NUL terminator; longer secrets cannot be verified against
+/// the system, so accepting them would produce accounts that can never be
+/// logged into with this tool again. This is a hard protocol limit, not a
+/// complexity policy.
+const MAX_PASSWORD_LEN: usize = 511;
 
 /// Well-known locations of the setuid verification helper.
 const CHKPWD_CANDIDATES: [&str; 3] = [
@@ -30,9 +33,14 @@ const CHKPWD_CANDIDATES: [&str; 3] = [
 
 /// Validates a password chosen by a user.
 ///
-/// The rules keep the value compatible with both backends used here: no
-/// control characters (they would break the stdin protocols) and a minimum
-/// length aligned with common PAM policies.
+/// This tool deliberately does NOT enforce complexity policies (minimum
+/// length, classes, dictionaries): that belongs to frontends and the PAM
+/// stack. Only constraints required by the transport protocols are checked:
+///
+/// - non-empty (an empty value would create a passwordless account);
+/// - no `\n`/`\r` (`chpasswd` reads line-based input);
+/// - no `\0` (`unix_chkpwd` splits passwords on NUL bytes);
+/// - within [`MAX_PASSWORD_LEN`] so the secret fits the helper's buffer.
 pub fn validate_new_password(password: &str) -> Result<()> {
     if password.is_empty() {
         return Err(Error::InvalidPassword(
@@ -41,20 +49,15 @@ pub fn validate_new_password(password: &str) -> Result<()> {
     }
     if password.len() > MAX_PASSWORD_LEN {
         return Err(Error::InvalidPassword(format!(
-            "password is too long (maximum is {MAX_PASSWORD_LEN} bytes)"
-        )));
-    }
-    if password.len() < MIN_PASSWORD_LEN {
-        return Err(Error::InvalidPassword(format!(
-            "password is too short (minimum is {MIN_PASSWORD_LEN} characters)"
+            "password is too long (the verification protocol accepts up to {MAX_PASSWORD_LEN} bytes)"
         )));
     }
     if password
         .chars()
-        .any(|c| c == '\n' || c == '\r' || c.is_control())
+        .any(|c| c == '\n' || c == '\r' || c == '\0')
     {
         return Err(Error::InvalidPassword(
-            "password must not contain control characters or line breaks".to_string(),
+            "password must not contain line breaks or NUL bytes".to_string(),
         ));
     }
     Ok(())
@@ -163,15 +166,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rejects_short_empty_and_control_passwords() {
+    fn rejects_empty_linebreak_and_nul_passwords() {
         assert!(validate_new_password("").is_err());
-        assert!(validate_new_password("a1b2c3d").is_err());
         assert!(validate_new_password("a1b2c3d4\n").is_err());
         assert!(validate_new_password("a1b2c3d4\r").is_err());
-        assert!(validate_new_password("a1b2c3\u{7f}").is_err());
-        assert!(validate_new_password("a1b2c3d4").is_ok());
+        assert!(validate_new_password("a1b2\0c3").is_err());
         let long = "x".repeat(MAX_PASSWORD_LEN + 1);
         assert!(validate_new_password(&long).is_err());
+    }
+
+    #[test]
+    fn complexity_policy_is_left_to_frontends() {
+        // Single character: allowed. Complexity is not this tool's job.
+        assert!(validate_new_password("a").is_ok());
+        assert!(validate_new_password("12345678901234567890").is_ok());
+        assert!(validate_new_password("pa ss:word\twith-weird\"chars'!").is_ok());
+        assert!(validate_new_password(&"x".repeat(MAX_PASSWORD_LEN)).is_ok());
     }
 
     #[test]

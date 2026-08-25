@@ -158,8 +158,11 @@ sudo argvus-accounts passwd ghost ignored new-secret-1 new-secret-1
 
 Rules and guarantees:
 
-- confirmation must match exactly, minimum length is 8, control characters
-  are rejected — all checked locally, before any elevation or prompt;
+- confirmation must match exactly; only transport constraints are enforced
+  locally — the value cannot be empty and cannot contain line breaks or NUL
+  bytes (they cannot cross the `chpasswd`/`unix_chkpwd` pipes). There is **no
+  complexity policy** here: minimum lengths, character classes and strength
+  checks belong to frontends or the PAM stack;
 - self-service changes verify the current password through the system's
   setuid helper (`unix_chkpwd`, the same mechanism `pam_unix` uses) *before*
   requesting elevation, so a typo never triggers an administrator dialog;

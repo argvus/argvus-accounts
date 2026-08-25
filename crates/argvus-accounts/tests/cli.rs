@@ -129,15 +129,21 @@ fn passwd_mismatched_confirmation_fails_before_any_prompt() {
 }
 
 #[test]
-fn passwd_short_new_password_is_rejected_locally() {
+fn passwd_short_passwords_are_accepted_policy_free() {
+    // Complexity policy belongs to frontends/PAM, not this CLI: a single
+    // character passes local validation and the flow stops at proof of the
+    // current password (wrong here), before any elevation attempt.
     let me = whoami();
+    if !has_chkpwd_helper() {
+        return;
+    }
     bin()
-        .args(["passwd", &me, "old-secret-1", "short", "short"])
+        .args(["passwd", &me, "definitely-not-my-password", "x", "x"])
         .env_remove(elevation_guard())
         .assert()
         .failure()
         .code(1)
-        .stderr(predicate::str::contains("too short"));
+        .stderr(predicate::str::contains("current password does not match"));
 }
 
 #[test]

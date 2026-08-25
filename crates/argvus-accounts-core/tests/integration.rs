@@ -424,17 +424,23 @@ fn administrator_reset_delegates_to_backend_with_validated_secret() {
     let manager =
         AccountManager::with_components(Box::new(AllowAllProvider), Box::new(ops.clone()));
 
-    // Too short: rejected before any backend call.
+    // Only protocol-level rules apply: empty is refused, short is fine.
     assert!(matches!(
-        manager.change_password("root", None, "short1!"),
+        manager.change_password("root", None, ""),
         Err(Error::InvalidPassword(_))
     ));
 
     manager
         .change_password("root", None, "a-very-new-password")
         .expect("allow-all provider authorizes the reset");
+    manager
+        .change_password("root", None, "x")
+        .expect("single-character passwords carry no policy here");
     assert_eq!(
         ops.snapshot(),
-        vec![format!("passwd:root:{}", "a-very-new-password".len())]
+        vec![
+            format!("passwd:root:{}", "a-very-new-password".len()),
+            format!("passwd:root:{}", "x".len()),
+        ]
     );
 }

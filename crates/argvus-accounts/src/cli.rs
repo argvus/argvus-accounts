@@ -81,7 +81,7 @@ pub enum Command {
         /// Current password (required when changing your own).
         #[arg(value_name = "OLD_PASSWORD")]
         old: String,
-        /// New password (minimum 8 characters).
+        /// New password (any content; line breaks/NUL are not transportable).
         #[arg(value_name = "NEW_PASSWORD")]
         new: String,
         /// New password again, must match exactly.

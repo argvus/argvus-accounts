@@ -10,7 +10,8 @@ use std::path::PathBuf;
     version,
     about = "Local user account and avatar manager for the Argvus desktop",
     after_help = "Self-service: 'self' subcommands act on your own account. \
-                  Administrative operations require root (sudo) in this release."
+                  Privileged operations elevate automatically via polkit \
+                  (pkexec); use sudo if you prefer a terminal prompt."
 )]
 pub struct Cli {
     /// Print additional diagnostic information to stderr.
@@ -68,6 +69,24 @@ pub enum Command {
         /// Groups to remove (administrative).
         #[arg(long, value_name = "GROUP")]
         remove: Vec<String>,
+    },
+    /// Change an account password.
+    ///
+    /// Changing your own password requires the current one as proof.
+    /// Administrators may reset another user's password (the current
+    /// password argument is ignored in that case).
+    Passwd {
+        /// Target username.
+        user: String,
+        /// Current password (required when changing your own).
+        #[arg(value_name = "OLD_PASSWORD")]
+        old: String,
+        /// New password (minimum 8 characters).
+        #[arg(value_name = "NEW_PASSWORD")]
+        new: String,
+        /// New password again, must match exactly.
+        #[arg(value_name = "CONFIRM_PASSWORD")]
+        confirm: String,
     },
     /// Operate on your own account.
     #[command(name = "self")]

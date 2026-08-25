@@ -2,6 +2,7 @@
 
 mod cli;
 mod commands;
+mod elevate;
 
 use clap::Parser;
 use cli::Cli;

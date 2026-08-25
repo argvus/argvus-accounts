@@ -116,6 +116,91 @@ fn verbose_flag_is_accepted_globally() {
         .stdout(predicate::str::starts_with("USER"));
 }
 
+#[test]
+fn passwd_mismatched_confirmation_fails_before_any_prompt() {
+    let me = whoami();
+    bin()
+        .args(["passwd", &me, "old-secret-1", "new-secret-1", "different-2"])
+        .env_remove(elevation_guard())
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("do not match"));
+}
+
+#[test]
+fn passwd_short_new_password_is_rejected_locally() {
+    let me = whoami();
+    bin()
+        .args(["passwd", &me, "old-secret-1", "short", "short"])
+        .env_remove(elevation_guard())
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("too short"));
+}
+
+#[test]
+fn passwd_wrong_current_password_is_denied_without_elevation() {
+    // Self-service flow: the wrong proof is caught before pkexec would ever
+    // run, so this test stays non-interactive and hermetic.
+    if !has_chkpwd_helper() {
+        return;
+    }
+    let me = whoami();
+    bin()
+        .args([
+            "passwd",
+            &me,
+            "definitely-not-my-password",
+            "another-pass-1",
+            "another-pass-1",
+        ])
+        .env_remove(elevation_guard())
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("current password does not match"));
+}
+
+#[test]
+fn passwd_unknown_user_fails_cleanly() {
+    bin()
+        .args([
+            "passwd",
+            "definitely_missing_user_xyz",
+            "old-secret-1",
+            "new-secret-1",
+            "new-secret-1",
+        ])
+        .env_remove(elevation_guard())
+        .assert()
+        .failure()
+        .code(1)
+        .stderr(predicate::str::contains("user not found"));
+}
+
+fn elevation_guard() -> &'static str {
+    "ARGVUS_ACCOUNTS_ELEVATED"
+}
+
+fn has_chkpwd_helper() -> bool {
+    [
+        "/usr/bin/unix_chkpwd",
+        "/usr/sbin/unix_chkpwd",
+        "/sbin/unix_chkpwd",
+    ]
+    .iter()
+    .any(|p| std::path::Path::new(p).exists())
+}
+
+/// Resolves the *effective* username so self-service tests always target the
+/// identity the helper would verify against (unlike `$USER`, which can drift
+/// under su/sudo/packaging sandboxes).
 fn whoami() -> String {
-    std::env::var("USER").unwrap_or_else(|_| "root".to_string())
+    let output = std::process::Command::new("id")
+        .arg("-un")
+        .output()
+        .expect("'id' is available on unix");
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
 }

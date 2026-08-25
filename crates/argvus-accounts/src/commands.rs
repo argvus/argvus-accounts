@@ -4,9 +4,11 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use argvus_accounts_core::passwd;
+use argvus_accounts_core::password;
 use argvus_accounts_core::{AccountManager, Error, Result};
 
 use crate::cli::{Cli, Command, SelfAction};
+use crate::elevate::{self, Requirement};
 
 /// Executes the parsed command line.
 pub fn execute(cli: &Cli) -> Result<()> {
@@ -23,6 +25,9 @@ pub fn execute(cli: &Cli) -> Result<()> {
         Command::List { all } => cmd_list(&manager, *all),
         Command::Show { user } => cmd_show(&manager, user),
         Command::Name { user, name } => {
+            elevate::ensure(&Requirement::OtherUsersOnly {
+                target: user.clone(),
+            })?;
             manager.set_display_name(user, name)?;
             println!("Display name updated successfully.");
             Ok(())
@@ -31,8 +36,22 @@ pub fn execute(cli: &Cli) -> Result<()> {
             user,
             image,
             remove,
-        } => cmd_avatar(&manager, user, image.as_deref(), *remove),
+        } => {
+            // Expand tilde before any elevation: pkexec resets the
+            // environment and '~' would resolve to root's home.
+            let expanded = image.as_deref().map(expand_tilde);
+            elevate::ensure(&Requirement::OtherUsersOnly {
+                target: user.clone(),
+            })?;
+            cmd_avatar(&manager, user, expanded.as_deref(), *remove)
+        }
         Command::Groups { user, add, remove } => cmd_groups(&manager, user, add, remove),
+        Command::Passwd {
+            user,
+            old,
+            new,
+            confirm,
+        } => cmd_passwd(&manager, user, old, new, confirm),
         Command::SelfAccount { action } => cmd_self(&manager, action.as_ref(), cli.verbose),
     }
 }
@@ -96,6 +115,9 @@ fn cmd_groups(
         return Ok(());
     }
 
+    // Mutating membership always requires root (gpasswd).
+    elevate::ensure(&Requirement::Always)?;
+
     let remove_set: BTreeSet<&str> = remove.iter().map(String::as_str).collect();
     let overlap: Vec<&str> = add
         .iter()
@@ -117,6 +139,40 @@ fn cmd_groups(
         manager.remove_group(user, group)?;
         println!("Removed '{user}' from group '{group}'.");
     }
+    Ok(())
+}
+
+fn cmd_passwd(
+    manager: &AccountManager,
+    user: &str,
+    old: &str,
+    new: &str,
+    confirm: &str,
+) -> Result<()> {
+    // Cheap local validation first: no prompts or elevation on typos.
+    if new != confirm {
+        return Err(Error::InvalidOperation(
+            "new password and confirmation do not match".to_string(),
+        ));
+    }
+    password::validate_new_password(new)?;
+
+    // Fails early with UserNotFound for unknown targets.
+    manager.get_user(user)?;
+    let me = AccountManager::current_username()?;
+    let is_self = me == *user;
+
+    // Prove knowledge of the current password before asking for elevation,
+    // so a typo never triggers an administrator prompt.
+    if is_self && passwd::effective_uid() != 0 && !password::verify_own_password(user, old)? {
+        return Err(Error::PermissionDenied(
+            "current password does not match".to_string(),
+        ));
+    }
+
+    elevate::ensure(&Requirement::Always)?;
+    manager.change_password(user, if is_self { Some(old) } else { None }, new)?;
+    println!("Password updated successfully for '{user}'.");
     Ok(())
 }
 

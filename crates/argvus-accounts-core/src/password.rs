@@ -69,12 +69,16 @@ pub fn chkpwd_helper_path() -> Option<std::path::PathBuf> {
         .find(|path| path.exists())
 }
 
-/// Verifies `password` for `username` using the system's setuid helper.
+/// Verifies `password` for `username` using the system's setuid helper
+/// (`unix_chkpwd`, shipped by linux-pam).
 ///
-/// Mirrors what `pam_unix` does for authentication. The helper enforces that
-/// unprivileged callers may only verify their own account, so this function is
-/// meaningful for self-service flows; administrators skip verification
-/// entirely when resetting another user's password.
+/// Contract notes derived from the helper itself:
+///
+/// - valid modes are `nullok`, `nonull` and `chkexpiry`; anything else makes
+///   it fail unconditionally with `PAM_SYSTEM_ERR`;
+/// - stdin must NOT be a tty (we always pipe);
+/// - an unprivileged caller may only verify its own account; other targets
+///   simply fail, which we surface as `Ok(false)`.
 ///
 /// Returns `Ok(false)` for wrong passwords, unknown users and locked
 /// accounts; only infrastructure failures (helper missing, spawn error)
@@ -88,7 +92,7 @@ pub fn verify_own_password(username: &str, password: &str) -> Result<bool> {
     };
 
     let mut child = Command::new(&helper)
-        .args([username, "chkpasswd"])
+        .args([username, "nullok"])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

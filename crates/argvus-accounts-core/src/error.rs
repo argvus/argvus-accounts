@@ -116,8 +116,14 @@ impl Error {
 
     /// Builds a [`Error::SystemOperationFailed`] for a failing external tool.
     pub fn command_failed(command: &str, status: &str, stderr: &str) -> Self {
+        let mut context = format!("external tool '{command}' failed ({status})");
+        let stderr = stderr.trim();
+        if !stderr.is_empty() {
+            context.push_str(": ");
+            context.push_str(stderr);
+        }
         Error::SystemOperationFailed {
-            context: "external tool reported a failure".to_string(),
+            context,
             source: Some(SystemSource::CommandFailed {
                 command: command.to_string(),
                 status: status.to_string(),

@@ -64,9 +64,9 @@ Design rules:
 
 - Reads use NSS APIs, never hand-parsed `/etc/passwd`/`/etc/group`.
 - Writes never edit account files directly. Display names go through
-  `usermod --comment` (admin) or `chfn --full-name` (self); group changes go
-  through `gpasswd -a/-d`. External tools are spawned with argument vectors —
-  there is no shell anywhere in the codebase.
+  `usermod --comment`; group changes go through `gpasswd -a/-d`. External
+  tools are spawned with argument vectors — there is no shell anywhere in the
+  codebase.
 - All user input is strictly validated before it can reach NSS, the
   filesystem or an external tool.
 - Avatar updates are atomic (tempfile -> fsync -> chmod/chown -> rename), so
@@ -98,9 +98,9 @@ makepkg -si
 cargo install --path crates/argvus-accounts
 ```
 
-Runtime dependencies: `shadow` (usermod/gpasswd) and `util-linux` (chfn).
-Both ship with every default Arch installation. Reading avatars requires no
-extra dependencies.
+Runtime dependencies: `shadow` (usermod/gpasswd/chpasswd), `util-linux`,
+`linux-pam` (setuid `unix_chkpwd`, used to verify the current password) and
+`polkit` (automatic elevation). All ship with every default Arch installation.
 
 ## Usage
 
@@ -181,7 +181,7 @@ Rules and guarantees:
 | `groups USER --remove G [--remove G2]` | Remove memberships | auto-elevates via polkit |
 | `passwd USER OLD NEW CONFIRM` | Change password (own: proof required; others: admin reset) | self: none to verify; write auto-elevates via polkit |
 | `self` / `self show` | Show own account | none |
-| `self name NAME` | Change own display name | own password via PAM (chfn) |
+| `self name NAME` | Change own display name | auto-elevates via polkit |
 | `self avatar IMAGE` / `self avatar --remove` | Manage own avatar | none |
 | `self groups` | List own groups | none |
 
@@ -192,7 +192,7 @@ Use `--verbose` for diagnostics on any subcommand.
 | Operation | Regular user | Admin/root |
 |---|---|---|
 | Read account info | yes | yes |
-| Change own display name | yes (via chfn/PAM) | yes |
+| Change own display name | yes (auto-elevates via polkit) | yes |
 | Change own avatar | yes | yes |
 | Change own password | yes (current password proof required) | yes |
 | Change another user's data | **no** (auto-elevates via polkit) | yes |

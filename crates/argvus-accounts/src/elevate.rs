@@ -57,11 +57,23 @@ pub fn ensure(requirement: &Requirement) -> Result<()> {
 
     eprintln!("argvus-accounts: requesting administrator privileges via polkit…");
 
-    let err = Command::new(program)
-        .arg(exe)
+    // pkexec sanitizes the inherited environment and rejects variables it
+    // considers suspicious (e.g. TERM from the terminal).  Clear everything
+    // and pass only what the polkit agent needs to receive the auth request.
+    let mut cmd = Command::new(program);
+    cmd.arg(exe)
         .args(std::env::args_os().skip(1))
-        .env(ELEVATED_ENV, "1")
-        .exec(); // replaces this process; only returns on exec failure
+        .env_clear()
+        .env(ELEVATED_ENV, "1");
+
+    if let Some(dbus) = std::env::var_os("DBUS_SESSION_BUS_ADDRESS") {
+        cmd.env("DBUS_SESSION_BUS_ADDRESS", dbus);
+    }
+    if let Some(xdg) = std::env::var_os("XDG_RUNTIME_DIR") {
+        cmd.env("XDG_RUNTIME_DIR", xdg);
+    }
+
+    let err = cmd.exec(); // replaces this process; only returns on exec failure
 
     Err(Error::system(format!("failed to launch pkexec: {err}")))
 }

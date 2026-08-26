@@ -1,7 +1,7 @@
 # Maintainer: William C. Canin <william.costa.canin@gmail.com>
 
 pkgname=argvus-accounts
-pkgver=0.2.0
+pkgver=0.2.1
 pkgrel=1
 pkgdesc="Local user account and avatar manager for the Argvus desktop"
 arch=('x86_64')

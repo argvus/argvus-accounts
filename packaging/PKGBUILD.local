@@ -1,0 +1,52 @@
+# Maintainer: William C. Canin <william.costa.canin@gmail.com>
+
+pkgname=argvus-accounts
+pkgver=0.2.1
+pkgrel=1
+pkgdesc="Local user account and avatar manager for the Argvus desktop"
+arch=('x86_64')
+url="https://github.com/argvus/argvus-accounts"
+license=('GPL-3.0-only')
+depends=('glibc' 'shadow' 'util-linux' 'polkit')
+makedepends=('cargo')
+options=('!debug')
+
+# NOTE: This package intentionally:
+#   - creates no users/groups,
+#   - modifies no existing accounts or home directories,
+#   - ships no services or scripts.
+# It installs only the CLI binary and documentation.
+
+source=("${pkgname}-${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "${pkgname}-${pkgver}"
+  cargo fetch --locked --target "${CARCH}-unknown-linux-gnu"
+}
+
+build() {
+  cd "${pkgname}-${pkgver}"
+  export CARGO_TARGET_DIR=target
+  cargo build --release --locked
+}
+
+check() {
+  cd "${pkgname}-${pkgver}"
+  # The test suite is hermetic: it never mutates system accounts and never
+  # writes outside temporary directories.
+  export CARGO_TARGET_DIR=target
+  cargo test --release --locked -- --test-threads=4
+}
+
+package() {
+  cd "${pkgname}-${pkgver}"
+
+  install -Dm755 "target/release/${pkgname}" \
+    "${pkgdir}/usr/bin/${pkgname}"
+
+  install -Dm644 README.md \
+    "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+  install -Dm644 LICENSE \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

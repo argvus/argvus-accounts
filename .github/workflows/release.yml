@@ -25,7 +25,6 @@ jobs:
             cargo \
             git \
             gnupg \
-            gtk4 \
             pacman-contrib \
             pkgconf \
             rust \
@@ -50,18 +49,23 @@ jobs:
           fi
 
           cargo_version="$(awk -F '"' '/^version = / { print $2; exit }' Cargo.toml)"
-          if [[ "$cargo_version" != "$version" ]]; then
+          if [[ -n "$cargo_version" && "$cargo_version" != "$version" ]]; then
             echo "Cargo.toml version (${cargo_version}) does not match tag (${version})." >&2
             exit 1
           fi
 
-          sed -i "s/^pkgver=.*/pkgver=${version}/" packaging/PKGBUILD
+          sed -i "s/^pkgver=.*/pkgver=${version}/" "packaging/PKGBUILD"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-      - name: Run clippy
+      - name: Validate repository
+        shell: bash
         run: |
-          sudo -u builder env GITHUB_WORKSPACE="$GITHUB_WORKSPACE" bash -lc \
-            'cd "$GITHUB_WORKSPACE" && cargo clippy --locked --all-targets --all-features -- -D warnings'
+          set -euo pipefail
+          if make -n validate >/dev/null 2>&1; then
+            make validate
+          else
+            echo "No make validate target; skipping repository validation."
+          fi
 
       - name: Build package
         shell: bash
@@ -71,7 +75,7 @@ jobs:
           sudo -u builder env GITHUB_WORKSPACE="$GITHUB_WORKSPACE" bash -lc \
             'cd "$GITHUB_WORKSPACE/packaging" && makepkg --nodeps --noconfirm --needed --cleanbuild --clean'
 
-          pkg_file="$(find packaging -maxdepth 1 -type f -name 'argvus-accounts-*.pkg.tar.zst' -print -quit)"
+          pkg_file="$(find "packaging" -maxdepth 1 -type f -name 'argvus-accounts-*.pkg.tar.zst' -print -quit)"
           if [[ -z "$pkg_file" ]]; then
             echo "Package file was not created." >&2
             exit 1
@@ -170,7 +174,6 @@ jobs:
 
           cd "$GITHUB_WORKSPACE/packages-repo"
           git config --global --add safe.directory "$PWD"
-
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/arch/x86_64

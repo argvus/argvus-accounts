@@ -116,9 +116,6 @@ fn cmd_groups(
         return Ok(());
     }
 
-    // Mutating membership always requires root (gpasswd).
-    elevate::ensure(&Requirement::Always)?;
-
     let remove_set: BTreeSet<&str> = remove.iter().map(String::as_str).collect();
     let overlap: Vec<&str> = add
         .iter()
@@ -131,6 +128,9 @@ fn cmd_groups(
             "cannot add and remove the same group(s) at once: {names}"
         )));
     }
+
+    // Mutating membership always requires root (gpasswd).
+    elevate::ensure(&Requirement::Always)?;
 
     for group in add {
         manager.add_group(user, group)?;

@@ -43,7 +43,7 @@ validate: fmt-check check validate-pkgbuild
 
 validate-pkgbuild:
 	@if command -v makepkg >/dev/null 2>&1; then \
-		cd packaging && makepkg -p PKGBUILD --printsrcinfo >/dev/null; \
+		cd packaging/arch && makepkg -p PKGBUILD --printsrcinfo >/dev/null; \
 	else \
 		echo "makepkg not found; skipping PKGBUILD syntax validation"; \
 	fi
@@ -62,4 +62,5 @@ reinstall: uninstall install
 
 clean:
 	cargo clean
+	rm -rf dist
 	rm -f packaging/arch/*.zst packaging/arch/*.tar.gz

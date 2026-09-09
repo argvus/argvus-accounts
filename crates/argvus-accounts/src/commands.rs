@@ -23,6 +23,20 @@ pub fn execute(cli: &Cli) -> Result<()> {
     }
 
     match &cli.command {
+        Command::Manage => {
+            use std::io::Read;
+            let mut input = String::new();
+            std::io::stdin()
+                .take(65537)
+                .read_to_string(&mut input)
+                .map_err(|err| Error::system(err.to_string()))?;
+            if input.len() > 65536 {
+                return Err(Error::InvalidOperation("request too large".into()));
+            }
+            let result = argvus_accounts_core::admin::execute(&input)?;
+            println!("{result}");
+            Ok(())
+        }
         Command::List { all } => cmd_list(&manager, *all),
         Command::Show { user } => cmd_show(&manager, user),
         Command::Name { user, name } => {

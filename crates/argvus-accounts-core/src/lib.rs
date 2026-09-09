@@ -49,3 +49,4 @@ pub use permissions::{
 pub fn get_user_by_name(name: &str) -> Result<Option<UserInfo>> {
     passwd::get_user_by_name(name)
 }
+pub mod admin;

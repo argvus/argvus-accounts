@@ -43,6 +43,28 @@ fn list_succeeds_with_header() {
 }
 
 #[test]
+fn frontend_snapshot_is_read_only_and_structured() {
+    bin()
+        .arg("manage")
+        .write_stdin(r#"{"action":"snapshot"}"#)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"users\":"))
+        .stdout(predicate::str::contains("\"groups\":"))
+        .stdout(predicate::str::contains("\"actor_uid\":"));
+}
+
+#[test]
+fn malformed_frontend_request_does_not_echo_secrets() {
+    bin()
+        .arg("manage")
+        .write_stdin(r#"{"action":"password","new":"secret-marker","unexpected":true}"#)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("secret-marker").not());
+}
+
+#[test]
 fn show_missing_user_fails_cleanly() {
     bin()
         .args(["show", "definitely_missing_user_xyz"])

@@ -25,6 +25,8 @@ pub struct Cli {
 /// Top-level subcommands.
 #[derive(Subcommand, Debug)]
 pub enum Command {
+    /// Structured frontend API. Mutations require pkexec; requests use stdin.
+    Manage,
     /// List local users.
     List {
         /// Include system accounts (uid < 1000).

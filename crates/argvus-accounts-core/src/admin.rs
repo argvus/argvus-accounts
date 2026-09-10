@@ -38,8 +38,18 @@ enum Request {
     },
     Delete {
         user: String,
+        #[serde(default)]
+        remove_home: bool,
     },
     CreateGroup {
+        group: String,
+    },
+    EditGroup {
+        group: String,
+        name: String,
+        members: Vec<String>,
+    },
+    DeleteGroup {
         group: String,
     },
     Avatar {
@@ -130,20 +140,36 @@ fn execute_request(request: Request) -> Result<Value> {
                 "groups": memberships.iter().filter(|group| group.gid != info.gid).map(|group| group.name.clone()).collect::<Vec<_>>()
             }));
         }
-        return Ok(
-            json!({"users": users, "groups": groups::list_groups()?.into_iter().map(|group| group.name).collect::<Vec<_>>(), "shells": shells()?, "actor_uid": actor_uid()?}),
-        );
+        let group_details = groups::list_groups()?;
+        return Ok(json!({
+            "users": users,
+            "groups": group_details.iter().map(|group| group.name.clone()).collect::<Vec<_>>(),
+            "group_details": group_details.into_iter().map(|group| json!({
+                "name": group.name,
+                "gid": group.gid,
+                "members": group.members
+            })).collect::<Vec<_>>(),
+            "shells": shells()?,
+            "actor_uid": actor_uid()?
+        }));
     }
     if passwd::effective_uid() != 0 {
         return Err(Error::PermissionDenied(
             "administration requires pkexec argvus-accounts manage".into(),
         ));
     }
-    apply_request(request, &mut run)
+    apply_request(request, &current_members_of, &mut run)
+}
+
+fn current_members_of(group: &str) -> Result<Vec<String>> {
+    Ok(groups::get_group_by_name(group)?
+        .ok_or_else(|| Error::GroupNotFound(group.into()))?
+        .members)
 }
 
 fn apply_request(
     request: Request,
+    current_members: &dyn Fn(&str) -> Result<Vec<String>>,
     run: &mut impl FnMut(&str, &[&str]) -> Result<()>,
 ) -> Result<Value> {
     match request {
@@ -244,14 +270,52 @@ fn apply_request(
             target(&user)?;
             run("/usr/bin/chage", &["--lastday", "0", "--", &user])?;
         }
-        Request::Delete { user } => {
+        Request::Delete { user, remove_home } => {
             protect_account(&user)?;
-            // Retain the home directory and never force deletion of logged-in users.
-            run("/usr/bin/userdel", &["--", &user])?;
+            // Never force deletion of logged-in users; home removal is explicit in the UI.
+            let args = if remove_home {
+                vec!["--remove", "--", user.as_str()]
+            } else {
+                vec!["--", user.as_str()]
+            };
+            run("/usr/bin/userdel", &args)?;
         }
         Request::CreateGroup { group } => {
             validation::validate_group_name(&group)?;
             run("/usr/bin/groupadd", &["--", &group])?;
+        }
+        Request::EditGroup {
+            group,
+            name,
+            members,
+        } => {
+            validation::validate_group_name(&group)?;
+            validation::validate_group_name(&name)?;
+            for member in &members {
+                validation::validate_username(member)?;
+            }
+            let existing = current_members(&group)?;
+            if name != group {
+                run("/usr/bin/groupmod", &["--new-name", &name, "--", &group])?;
+            }
+            for member in &existing {
+                if !members.iter().any(|candidate| candidate == member) {
+                    run("/usr/bin/gpasswd", &["--delete", member, "--", &name])?;
+                }
+            }
+            for member in &members {
+                if !existing.iter().any(|candidate| candidate == member) {
+                    run(
+                        "/usr/bin/usermod",
+                        &["--append", "--groups", &name, "--", member],
+                    )?;
+                }
+            }
+        }
+        Request::DeleteGroup { group } => {
+            validation::validate_group_name(&group)?;
+            current_members(&group)?;
+            run("/usr/bin/groupdel", &["--", &group])?;
         }
         Request::Avatar { user, path } => {
             let manager = AccountManager::new();
@@ -291,7 +355,7 @@ mod tests {
             shell: shells().unwrap()[0].clone(),
             groups: Vec::new(),
         };
-        apply_request(request, &mut |program, args| {
+        apply_request(request, &|_| Ok(Vec::new()), &mut |program, args| {
             calls.push((
                 program.to_string(),
                 args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
@@ -316,7 +380,10 @@ mod tests {
             groups: Vec::new(),
         };
         assert!(
-            apply_request(request, &mut |_, _| panic!("must not run a system command")).is_err()
+            apply_request(request, &|_| Ok(Vec::new()), &mut |_, _| {
+                panic!("must not run a system command")
+            })
+            .is_err()
         );
     }
 
@@ -325,9 +392,82 @@ mod tests {
         assert!(
             apply_request(
                 Request::Delete {
-                    user: "root".into()
+                    user: "root".into(),
+                    remove_home: false,
                 },
+                &|_| Ok(Vec::new()),
                 &mut |_, _| panic!("must not delete root")
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn edit_group_renames_and_syncs_membership() {
+        let mut calls = Vec::new();
+        let request = Request::EditGroup {
+            group: "staff".into(),
+            name: "team".into(),
+            members: vec!["alice".into(), "bob".into()],
+        };
+        let current = |_group: &str| Ok(vec!["carol".into()]);
+        apply_request(request, &current, &mut |program, args| {
+            calls.push((
+                program.to_string(),
+                args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
+            ));
+            Ok(())
+        })
+        .unwrap();
+        assert!(calls.contains(&(
+            "/usr/bin/groupmod".into(),
+            vec![
+                "--new-name".into(),
+                "team".into(),
+                "--".into(),
+                "staff".into()
+            ]
+        )));
+        assert!(calls.contains(&(
+            "/usr/bin/gpasswd".into(),
+            vec![
+                "--delete".into(),
+                "carol".into(),
+                "--".into(),
+                "team".into()
+            ]
+        )));
+        assert!(calls.iter().any(|call| call.0 == "/usr/bin/usermod"));
+        assert!(calls.iter().any(|call| call.1.contains(&"--append".into())));
+    }
+
+    #[test]
+    fn delete_group_runs_groupdel() {
+        let mut calls = Vec::new();
+        let current = |_group: &str| Ok(vec!["alice".into()]);
+        apply_request(
+            Request::DeleteGroup {
+                group: "legacy".into(),
+            },
+            &current,
+            &mut |program, _| {
+                calls.push(program.to_string());
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(calls.contains(&"/usr/bin/groupdel".into()));
+    }
+
+    #[test]
+    fn group_operations_reject_missing_or_invalid_groups() {
+        assert!(
+            apply_request(
+                Request::DeleteGroup {
+                    group: "../etc/passwd".into()
+                },
+                &|_| Ok(Vec::new()),
+                &mut |_, _| panic!("must not delete an invalid group")
             )
             .is_err()
         );

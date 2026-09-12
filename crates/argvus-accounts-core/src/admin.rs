@@ -15,6 +15,8 @@ enum Request {
         name: String,
         shell: String,
         groups: Vec<String>,
+        #[serde(default)]
+        password: Option<String>,
     },
     Edit {
         user: String,
@@ -158,7 +160,12 @@ fn execute_request(request: Request) -> Result<Value> {
             "administration requires pkexec argvus-accounts manage".into(),
         ));
     }
-    apply_request(request, &current_members_of, &mut run)
+    apply_request(
+        request,
+        &current_members_of,
+        &mut run,
+        &mut password::set_password_admin,
+    )
 }
 
 fn current_members_of(group: &str) -> Result<Vec<String>> {
@@ -171,6 +178,7 @@ fn apply_request(
     request: Request,
     current_members: &dyn Fn(&str) -> Result<Vec<String>>,
     run: &mut impl FnMut(&str, &[&str]) -> Result<()>,
+    set_password: &mut impl FnMut(&str, &str) -> Result<()>,
 ) -> Result<Value> {
     match request {
         Request::Snapshot => unreachable!(),
@@ -179,6 +187,7 @@ fn apply_request(
             name,
             shell,
             groups,
+            password,
         } => {
             validation::validate_username(&user)?;
             let name = metadata::validate_display_name(&name)?;
@@ -187,7 +196,13 @@ fn apply_request(
             if passwd::get_user_by_name(&user)?.is_some() {
                 return Err(invalid("user already exists"));
             }
-            // A new account remains password-locked until a separate password operation succeeds.
+            // A new account remains password-locked unless `password` was
+            // supplied; validate any requestable secret before touching the
+            // system so an unusable password fails fast.
+            let new_password = password.filter(|value| !value.is_empty());
+            if let Some(new_password) = new_password.as_deref() {
+                password::validate_new_password(new_password)?;
+            }
             run(
                 "/usr/bin/useradd",
                 &[
@@ -203,6 +218,13 @@ fn apply_request(
                     &user,
                 ],
             )?;
+            if let Some(new_password) = new_password {
+                set_password(&user, &new_password).map_err(|err| {
+                    Error::system(format!(
+                        "account '{user}' was created, but setting its password failed: {err}"
+                    ))
+                })?;
+            }
         }
         Request::Edit {
             user,
@@ -354,14 +376,24 @@ mod tests {
             name: "Alice $(id)".into(),
             shell: shells().unwrap()[0].clone(),
             groups: Vec::new(),
+            password: None,
         };
-        apply_request(request, &|_| Ok(Vec::new()), &mut |program, args| {
-            calls.push((
-                program.to_string(),
-                args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
-            ));
-            Ok(())
-        })
+        let mut set_password_calls = Vec::new();
+        apply_request(
+            request,
+            &|_| Ok(Vec::new()),
+            &mut |program, args| {
+                calls.push((
+                    program.to_string(),
+                    args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
+                ));
+                Ok(())
+            },
+            &mut |user, new| {
+                set_password_calls.push((user.to_string(), new.to_string()));
+                Ok(())
+            },
+        )
         .unwrap();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "/usr/bin/useradd");
@@ -369,6 +401,72 @@ mod tests {
         assert!(calls[0].1.contains(&"Alice $(id)".into()));
         assert!(!calls[0].1.contains(&"--password".into()));
         assert_eq!(calls[0].1.last().unwrap(), "argvus_test_created");
+        assert!(set_password_calls.is_empty());
+    }
+
+    #[test]
+    fn create_with_password_sets_it_without_passing_secret_via_argv() {
+        let secret = "correct horse battery staple";
+        let mut calls = Vec::new();
+        let mut set_password_calls = Vec::new();
+        let request = Request::Create {
+            user: "argvus_test_created".into(),
+            name: "Alice".into(),
+            shell: shells().unwrap()[0].clone(),
+            groups: Vec::new(),
+            password: Some(secret.into()),
+        };
+        apply_request(
+            request,
+            &|_| Ok(Vec::new()),
+            &mut |program, args| {
+                calls.push((
+                    program.to_string(),
+                    args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
+                ));
+                Ok(())
+            },
+            &mut |user, new| {
+                set_password_calls.push((user.to_string(), new.to_string()));
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "/usr/bin/useradd");
+        assert!(!calls[0].1.contains(&"--password".into()));
+        assert_eq!(calls[0].1.last().unwrap(), "argvus_test_created");
+        for (_program, args) in &calls {
+            for arg in args {
+                assert!(
+                    !arg.contains(secret),
+                    "secret must never reach argv: {arg:?}"
+                );
+            }
+        }
+        assert_eq!(set_password_calls.len(), 1);
+        assert_eq!(set_password_calls[0].0, "argvus_test_created");
+        assert_eq!(set_password_calls[0].1, secret);
+    }
+
+    #[test]
+    fn create_rejects_invalid_password_before_running_any_system_command() {
+        let request = Request::Create {
+            user: "argvus_test_created".into(),
+            name: "Alice".into(),
+            shell: shells().unwrap()[0].clone(),
+            groups: Vec::new(),
+            password: Some("line\nbreak".into()),
+        };
+        assert!(
+            apply_request(
+                request,
+                &|_| Ok(Vec::new()),
+                &mut |_, _| panic!("must not run a system command for an invalid password"),
+                &mut |_, _| panic!("must not set a password for an invalid password"),
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -378,11 +476,15 @@ mod tests {
             name: "Invalid".into(),
             shell: "/bin/sh".into(),
             groups: Vec::new(),
+            password: None,
         };
         assert!(
-            apply_request(request, &|_| Ok(Vec::new()), &mut |_, _| {
-                panic!("must not run a system command")
-            })
+            apply_request(
+                request,
+                &|_| Ok(Vec::new()),
+                &mut |_, _| panic!("must not run a system command"),
+                &mut |_, _| panic!("must not set a password"),
+            )
             .is_err()
         );
     }
@@ -396,7 +498,8 @@ mod tests {
                     remove_home: false,
                 },
                 &|_| Ok(Vec::new()),
-                &mut |_, _| panic!("must not delete root")
+                &mut |_, _| panic!("must not delete root"),
+                &mut |_, _| panic!("must not set a password"),
             )
             .is_err()
         );
@@ -411,13 +514,18 @@ mod tests {
             members: vec!["alice".into(), "bob".into()],
         };
         let current = |_group: &str| Ok(vec!["carol".into()]);
-        apply_request(request, &current, &mut |program, args| {
-            calls.push((
-                program.to_string(),
-                args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
-            ));
-            Ok(())
-        })
+        apply_request(
+            request,
+            &current,
+            &mut |program, args| {
+                calls.push((
+                    program.to_string(),
+                    args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
+                ));
+                Ok(())
+            },
+            &mut |_, _| panic!("EditGroup must not set a password"),
+        )
         .unwrap();
         assert!(calls.contains(&(
             "/usr/bin/groupmod".into(),
@@ -454,6 +562,7 @@ mod tests {
                 calls.push(program.to_string());
                 Ok(())
             },
+            &mut |_, _| panic!("DeleteGroup must not set a password"),
         )
         .unwrap();
         assert!(calls.contains(&"/usr/bin/groupdel".into()));
@@ -467,7 +576,8 @@ mod tests {
                     group: "../etc/passwd".into()
                 },
                 &|_| Ok(Vec::new()),
-                &mut |_, _| panic!("must not delete an invalid group")
+                &mut |_, _| panic!("must not delete an invalid group"),
+                &mut |_, _| panic!("must not set a password"),
             )
             .is_err()
         );

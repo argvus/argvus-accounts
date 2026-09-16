@@ -18,7 +18,9 @@ crates/
     ├── src/avatar.rs         validation/normalization/atomic deploy
     ├── src/permissions.rs    Action + AuthorizationProvider trait
     └── src/account.rs        AccountManager facade + PrivilegeOps trait
-packaging/PKGBUILD            Arch Linux package
+packaging/arch/
+├── ci/PKGBUILD                tagged-source Arch package
+└── local/PKGBUILD             working-tree Arch package
 ```
 
 ## Commands
@@ -58,7 +60,7 @@ Tests must be hermetic:
 ## Release flow
 
 1. Bump versions in both crate manifests (workspace version).
-2. Update `pkgver` handling: the tag workflow rewrites `packaging/PKGBUILD`
+2. Update `pkgver` handling: the tag workflow rewrites `packaging/arch/ci/PKGBUILD`
    automatically from the pushed `vX.Y.Z` tag.
 3. Tag the release (`git tag vX.Y.Z`); CI builds and publishes the Arch
    package to `argvus/packages`.

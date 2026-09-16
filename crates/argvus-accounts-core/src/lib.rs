@@ -41,12 +41,12 @@ pub use avatar::{AVATAR_FILENAME, avatar_path, find_avatar};
 pub use error::{Error, Result, SystemSource};
 pub use passwd::UserInfo;
 pub use permissions::{
-    Action, ActorIdentity, AllowAllProvider, AuthContext, AuthorizationProvider,
-    UnixAuthorizationProvider,
+  Action, ActorIdentity, AllowAllProvider, AuthContext, AuthorizationProvider,
+  UnixAuthorizationProvider,
 };
 
 /// Looks up a local user by name through NSS. Re-exported for convenience.
 pub fn get_user_by_name(name: &str) -> Result<Option<UserInfo>> {
-    passwd::get_user_by_name(name)
+  passwd::get_user_by_name(name)
 }
 pub mod admin;

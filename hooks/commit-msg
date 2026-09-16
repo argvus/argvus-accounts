@@ -1,0 +1,8 @@
+#!/usr/bin/env sh
+MSG_FILE="$1"
+MSG=$(head -n 1 "$MSG_FILE")
+PATTERN='^(feat|fix|docs|style|refactor|test|chore|perf|build|ci)(\([a-zA-Z0-9_-]+\))?: .+'
+if ! echo "$MSG" | grep -Eq "$PATTERN"; then
+  echo "Invalid Conventional Commit message: <type>(optional-scope): <message>" >&2
+  exit 1
+fi

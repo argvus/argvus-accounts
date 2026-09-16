@@ -1,66 +1,44 @@
-PREFIX ?= /usr
-DESTDIR ?=
-
-BIN_NAME := argvus-accounts
-BIN := target/release/$(BIN_NAME)
-
+.PHONY: help build package pkg rust-build release install install-package clean validate lint fmt fmt-check clippy test tests check audit deny machete changelog
 .DEFAULT_GOAL := help
-
-.PHONY: help build build-bin check lint fmt fmt-check validate validate-pkgbuild install uninstall reinstall clean
-
 help:
-	@echo "Available targets:"
-	@echo "  make build"
-	@echo "  make build-bin"
-	@echo "  make check"
-	@echo "  make fmt"
-	@echo "  make fmt-check"
-	@echo "  make validate"
-	@echo "  make validate-pkgbuild"
-	@echo "  make install"
-	@echo "  make uninstall"
-	@echo "  make clean"
-
-build:
-	@tools/build-local-package.sh
-
-build-bin:
-	cargo build --release --locked
-
-check:
-	cargo clippy --locked --all-targets --all-features -- -D warnings
-	cargo test --locked
-
-lint: check
-
+	@echo "Available targets: make build, make check, make validate, make install"
+lint:
+	@shellcheck tools/sh/pkgbuild_local.sh
 fmt:
-	cargo fmt
-
+	@cargo fmt --all
 fmt-check:
-	cargo fmt --check
-
-validate: fmt-check check validate-pkgbuild
-
-validate-pkgbuild:
-	@if command -v makepkg >/dev/null 2>&1; then \
-		cd packaging/arch && makepkg -p PKGBUILD --printsrcinfo >/dev/null; \
-	else \
-		echo "makepkg not found; skipping PKGBUILD syntax validation"; \
-	fi
-
-install: build-bin
-	install -Dm755 "$(BIN)" "$(DESTDIR)$(PREFIX)/bin/$(BIN_NAME)"
-	install -Dm644 README.md "$(DESTDIR)$(PREFIX)/share/doc/$(BIN_NAME)/README.md"
-	install -Dm644 LICENSE "$(DESTDIR)$(PREFIX)/share/licenses/$(BIN_NAME)/LICENSE"
-
-uninstall:
-	rm -f "$(DESTDIR)$(PREFIX)/bin/$(BIN_NAME)"
-	rm -rf "$(DESTDIR)$(PREFIX)/share/doc/$(BIN_NAME)"
-	rm -rf "$(DESTDIR)$(PREFIX)/share/licenses/$(BIN_NAME)"
-
-reinstall: uninstall install
-
+	@cargo fmt --all -- --check
+clippy:
+	@cargo clippy --workspace --all-targets --all-features -- -D warnings
+test:
+	@cargo test --workspace --locked
+tests: test
+audit:
+	@cargo audit
+deny:
+	@cargo deny check
+machete:
+	@cargo machete
+check: lint fmt-check clippy test
+rust-build:
+	@cargo build --workspace --locked
+release: check
+	@cargo build --workspace --release --locked
+package: check
+	@tools/sh/pkgbuild_local.sh
+pkg: package
+build: package
+install:
+	@sudo pacman -U build/dist/*.zst --noconfirm --overwrite="*"
+install-package: install
+validate:
+	@shellcheck tools/sh/pkgbuild_local.sh
+	@cargo metadata --locked --no-deps --format-version 1 >/dev/null
+	@cd packaging/arch/ci && makepkg -p PKGBUILD --printsrcinfo >/dev/null
+	@cd packaging/arch/local && makepkg -p PKGBUILD --printsrcinfo >/dev/null
+	@echo "Validation OK"
+changelog:
+	@git-cliff -o CHANGELOG.md
 clean:
-	cargo clean
-	rm -rf dist
-	rm -f packaging/arch/*.zst packaging/arch/*.tar.gz
+	@cargo clean
+	@rm -rf build/

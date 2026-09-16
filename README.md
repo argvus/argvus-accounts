@@ -314,7 +314,7 @@ directories.
 
 ## Packaging
 
-`packaging/arch/PKGBUILD` builds the Arch package. It installs only
+`packaging/arch/{ci,local}/PKGBUILD` build the Arch package. They install only
 `/usr/bin/argvus-accounts` plus documentation/license — no users are created,
 no dotfiles touched, no services enabled during installation.
 

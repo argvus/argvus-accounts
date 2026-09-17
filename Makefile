@@ -1,9 +1,22 @@
-.PHONY: help build package pkg rust-build release install install-package clean validate lint fmt fmt-check clippy test tests check audit deny machete changelog
+.PHONY: help build package pkg rust-build release install install-package clean validate lint lint-shell fmt fmt-check clippy test tests check audit deny machete changelog
 .DEFAULT_GOAL := help
 help:
 	@echo "Available targets: make build, make check, make validate, make install"
-lint:
-	@shellcheck tools/sh/pkgbuild_local.sh
+lint-shell:
+	@for root in tools packaging/arch/common src; do \
+		if [ -d "$$root" ]; then \
+			find "$$root" -type f -name '*.sh' -exec shellcheck -e SC1090 -e SC2034 -e SC2154 {} +; \
+		fi; \
+	done
+	@for root in tools packaging/arch/common src; do \
+		if [ -d "$$root" ]; then \
+			find "$$root" -type f -name '*.sh' -exec bash -n {} +; \
+		fi; \
+	done
+	@git diff --check
+	@echo "Lint Shell OK"
+
+lint: lint-shell
 fmt:
 	@cargo fmt --all
 fmt-check:

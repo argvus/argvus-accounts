@@ -165,7 +165,18 @@ fn execute_request(request: Request) -> Result<Value> {
                 "groups": memberships.iter().filter(|group| group.gid != info.gid).map(|group| group.name.clone()).collect::<Vec<_>>()
             }));
     }
-    let group_details = groups::list_groups()?;
+    // Without administration rights only the groups the caller belongs to are listed.
+    let own_groups: Vec<String> = match passwd::get_user_by_uid(actor)? {
+      Some(user) => groups::groups_of_user(&user.username, user.gid)?
+        .into_iter()
+        .map(|group| group.name)
+        .collect(),
+      None => Vec::new(),
+    };
+    let group_details: Vec<_> = groups::list_groups()?
+      .into_iter()
+      .filter(|group| is_admin || own_groups.contains(&group.name))
+      .collect();
     return Ok(json!({
         "users": users,
         "groups": group_details.iter().map(|group| group.name.clone()).collect::<Vec<_>>(),

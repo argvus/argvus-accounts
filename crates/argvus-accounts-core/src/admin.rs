@@ -131,11 +131,32 @@ pub fn execute(input: &str) -> Result<Value> {
   execute_request(request)
 }
 
+/// Whether `uid` may administer accounts: root, or a member of the `sudo` group.
+fn is_administrator(uid: u32) -> Result<bool> {
+  if uid == 0 {
+    return Ok(true);
+  }
+  let Some(user) = passwd::get_user_by_uid(uid)? else {
+    return Ok(false);
+  };
+  Ok(
+    groups::groups_of_user(&user.username, user.gid)?
+      .iter()
+      .any(|group| group.name == "sudo"),
+  )
+}
+
 fn execute_request(request: Request) -> Result<Value> {
   if matches!(request, Request::Snapshot) {
     let manager = AccountManager::new();
+    let actor = actor_uid()?;
+    let is_admin = is_administrator(actor)?;
     let mut users = Vec::new();
     for info in manager.list_users(true)? {
+      // Without administration rights an account only sees its own entry.
+      if !is_admin && info.uid != actor {
+        continue;
+      }
       let memberships = groups::groups_of_user(&info.username, info.gid)?;
       users.push(json!({
                 "user": info.username, "name": info.display_name().unwrap_or(""),
@@ -151,10 +172,12 @@ fn execute_request(request: Request) -> Result<Value> {
         "group_details": group_details.into_iter().map(|group| json!({
             "name": group.name,
             "gid": group.gid,
-            "members": group.members
+            // Membership of other accounts is only shown to administrators.
+            "members": if is_admin { group.members } else { Vec::new() }
         })).collect::<Vec<_>>(),
         "shells": shells()?,
-        "actor_uid": actor_uid()?
+        "actor_uid": actor,
+        "actor_is_admin": is_admin
     }));
   }
   if passwd::effective_uid() != 0 {

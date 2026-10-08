@@ -4,7 +4,9 @@ use std::process::Command;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::{AccountManager, Error, Result, groups, metadata, passwd, password, validation};
+use crate::{
+  AccountManager, Error, Result, autologin, groups, metadata, passwd, password, validation,
+};
 
 #[derive(Deserialize)]
 #[serde(tag = "action", rename_all = "kebab-case", deny_unknown_fields)]
@@ -57,6 +59,10 @@ enum Request {
   Avatar {
     user: String,
     path: String,
+  },
+  AutoLogin {
+    user: String,
+    enabled: bool,
   },
 }
 
@@ -188,7 +194,9 @@ fn execute_request(request: Request) -> Result<Value> {
         })).collect::<Vec<_>>(),
         "shells": shells()?,
         "actor_uid": actor,
-        "actor_is_admin": is_admin
+        "actor_is_admin": is_admin,
+        // Best-effort: a missing/unreadable greetd config must not break the snapshot.
+        "autologin_user": autologin::current_user().unwrap_or(None)
     }));
   }
   if passwd::effective_uid() != 0 {
@@ -384,6 +392,15 @@ fn apply_request(
       } else {
         manager.set_avatar(&user, std::path::Path::new(&path))?;
       }
+    }
+    Request::AutoLogin { user, enabled } => {
+      let info = target(&user)?;
+      if info.uid < 1000 || info.uid == 65534 {
+        return Err(invalid(
+          "automatic login is only available for regular user accounts",
+        ));
+      }
+      autologin::set_user(enabled.then_some(user.as_str()))?;
     }
   }
   Ok(json!({"ok": true}))

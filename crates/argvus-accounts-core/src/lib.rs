@@ -27,6 +27,7 @@
 #![warn(missing_docs)]
 
 pub mod account;
+pub mod autologin;
 pub mod avatar;
 pub mod error;
 pub mod groups;

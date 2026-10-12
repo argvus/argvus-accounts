@@ -22,7 +22,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 tempfile = "3"
 thiserror = "2"
 clap = { version = "4", features = ["derive", "wrap_help"] }
-argvus-accounts-core = { path = "crates/argvus-accounts-core", version = "0.2.0" }
+argvus-accounts-core = { path = "crates/argvus-accounts-core", version = "0.1.0" }
 
 [profile.release]
 lto = true

@@ -6,7 +6,7 @@
 // never asked for a password.
 polkit.addAdminRule(function (action, subject) {
   if (action.id !== "org.freedesktop.policykit.exec" ||
-      action.lookup("program") !== "/usr/bin/argvus-accounts") {
+      action.lookup("program") !== "/usr/lib/argvus/commands/argvus-accounts") {
     return [];
   }
   if (subject.isInGroup("sudo")) {

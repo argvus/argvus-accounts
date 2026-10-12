@@ -201,7 +201,7 @@ fn execute_request(request: Request) -> Result<Value> {
   }
   if passwd::effective_uid() != 0 {
     return Err(Error::PermissionDenied(
-      "administration requires pkexec argvus-accounts manage".into(),
+      "administration requires pkexec /usr/lib/argvus/commands/argvus-accounts manage".into(),
     ));
   }
   apply_request(

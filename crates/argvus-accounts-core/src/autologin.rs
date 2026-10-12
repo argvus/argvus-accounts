@@ -20,7 +20,7 @@ use crate::validation;
 pub const CONFIG_PATH: &str = "/etc/greetd/config.toml";
 
 /// The session command started for an auto-logged-in user.
-const SESSION_COMMAND: &str = "argvus-session";
+const SESSION_COMMAND: &str = "/usr/lib/argvus/commands/argvus-session";
 
 const SECTION_HEADER: &str = "[initial_session]";
 
@@ -142,14 +142,14 @@ fn remove_section(contents: &str) -> String {
 mod tests {
   use super::*;
 
-  const BASE: &str = "[general]\nsource_profile = false\n\n[terminal]\nvt = 1\n\n[default_session]\ncommand = \"argvus-greeter-session\"\nuser = \"greeter\"\n";
+  const BASE: &str = "[general]\nsource_profile = false\n\n[terminal]\nvt = 1\n\n[default_session]\ncommand = \"/usr/lib/argvus/commands/argvus-greeter-session\"\nuser = \"greeter\"\n";
 
   #[test]
   fn adds_section_when_absent() {
     let updated = set_user_in(BASE, Some("ghost"));
-    assert!(
-      updated.contains("[initial_session]\ncommand = \"argvus-session\"\nuser = \"ghost\"\n")
-    );
+    assert!(updated.contains(
+      "[initial_session]\ncommand = \"/usr/lib/argvus/commands/argvus-session\"\nuser = \"ghost\"\n"
+    ));
     assert!(updated.contains("[default_session]"));
   }
 

@@ -9,7 +9,7 @@ shadow-utils), without touching the Unix username and without introducing any
 daemon.
 
 ```
-argvus-accounts
+argvus accounts
       |
       v
 account metadata / avatar (~/.face)
@@ -105,12 +105,12 @@ Runtime dependencies: `shadow` (usermod/gpasswd/chpasswd), `util-linux`,
 ## Usage
 
 ```text
-$ argvus-accounts list
+$ argvus accounts list
 USER             NAME
 ghost            Ghost
 william          William Canin
 
-$ argvus-accounts show ghost
+$ argvus accounts show ghost
 Username: ghost
 Name: Ghost
 UID: 1001
@@ -120,24 +120,24 @@ Shell: /bin/bash
 Groups: audio, video, wheel
 Avatar: /home/ghost/.face
 
-$ argvus-accounts self avatar ~/Pictures/avatar.png
+$ argvus accounts self avatar ~/Pictures/avatar.png
 Avatar updated successfully.
 
-$ argvus-accounts self avatar --remove
+$ argvus accounts self avatar --remove
 Avatar removed successfully.
 
-$ argvus-accounts self name "William Canin"
+$ argvus accounts self name "William Canin"
 Display name updated successfully.
 
-$ argvus-accounts name ghost "Ghost"
+$ argvus accounts name ghost "Ghost"
 argvus-accounts: requesting administrator privileges via polkit…
 Display name updated successfully.
 
-$ argvus-accounts groups ghost --add wheel
+$ argvus accounts groups ghost --add wheel
 argvus-accounts: requesting administrator privileges via polkit…
 Added 'ghost' to group 'wheel'.
 
-$ argvus-accounts passwd william current-pass new-secret-1 new-secret-1
+$ argvus accounts passwd william current-pass new-secret-1 new-secret-1
 Password updated successfully for 'william'.
 ```
 
@@ -150,10 +150,10 @@ desktop agent asks for authorization. Prefer a terminal prompt? Keep using
 
 ```sh
 # Your own password: the current one is required as proof.
-argvus-accounts passwd $USER <OLD_PASSWD> <NEW_PASSWD> <CONFIRM_PASSWD>
+argvus accounts passwd $USER <OLD_PASSWD> <NEW_PASSWD> <CONFIRM_PASSWD>
 
 # Administrator reset of another user (current password not needed).
-sudo argvus-accounts passwd ghost ignored new-secret-1 new-secret-1
+sudo argvus accounts passwd ghost ignored new-secret-1 new-secret-1
 ```
 
 Rules and guarantees:
@@ -315,7 +315,7 @@ directories.
 ## Packaging
 
 `packaging/arch/{ci,local}/PKGBUILD` build the Arch package. They install only
-`/usr/bin/argvus-accounts` plus documentation/license — no users are created,
+`/usr/lib/argvus/commands/argvus-accounts` plus documentation/license — no users are created,
 no dotfiles touched, no services enabled during installation.
 
 ## Roadmap
